@@ -1,0 +1,29 @@
+---
+  ###################
+  # Get IOS version
+  ###################
+- name: Get IOS Version from host
+  hosts: cisco
+  connection: ansible.netcommon.network_cli
+  gather_facts: no
+
+  collections:
+    - cisco.ios.ios
+  
+  vars:
+    my_new_var: "FOUND !!!!!!"
+
+  tasks:
+
+    # Show that BGP is up
+    - name: Show DIR
+      become: True
+      cisco.ios.ios_command: 
+        commands: dir "nvram:"
+      register: dir_output
+
+    - name: Debug
+      when: dir_output.stdout[0].find('backup_config') == -1
+      debug:
+        msg: "{{ my_new_var }}"
+...

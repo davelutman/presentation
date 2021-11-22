@@ -1,0 +1,108 @@
+---
+  #############################
+  # Configure BGP between hosts
+  #############################
+
+- name: Setup BGP bnetween Washington and San Jose
+  hosts: cisco
+  connection: ansible.netcommon.network_cli
+  gather_facts: no
+
+  collections:
+    - cisco.ios.ios
+
+  tasks:
+
+    # Perform a DIR on the nvram: to see if we have a backup config already in place
+    - name: Dir Nvram
+      become: True
+      cisco.ios.ios_command: 
+        commands: dir "nvram:"
+      register: dir_output
+
+    # Backup Running Config to Nvram in case of need to revert config.  Only do this if we havent got a backup config already
+    - name: Backup Startup config to nvram
+      when: dir_output.stdout[0].find('backup_config') == -1
+      become: true
+      cisco.ios.ios_command:
+        commands:
+        - command: 'copy startup-config nvram:backup_config.cfg'
+          prompt: 'Destination filename \[backup_config.cfg\]?'
+          answer: 'backup_config.cfg'
+
+        
+    # Configure Loopback via IOS Command
+    - name: Configure loopback IP Address [ IOS_CONFIG ]
+      become: True
+      cisco.ios.ios_config:
+        lines:
+        - ip address {{ loopback_interface.ip_address }} {{ loopback_interface.subnet_mask }}
+        parents: interface {{ loopback_interface.name }}
+
+    # Configure EBGP interface
+     # Configure Loopback via IOS Command
+    - name: Configure EBGP Interface Address [ IOS_CONFIG ]
+      become: True
+      cisco.ios.ios_config:
+        lines:
+        - ip address {{ bgp.ebgp_ip_address }} {{ bgp.ebgp_subnet_mask }}
+        - no shutdown
+        parents: interface {{ bgp.ebgp_interface_name }}
+
+    # Configure BGP on Router
+    - name: Configure EBGP Interface Address [ IOS_CONFIG ]
+      become: True
+      cisco.ios.ios_config:
+        lines:
+          - bgp router-id {{ loopback_interface.ip_address }}
+          - neighbor {{ bgp.ebgp_neighbor_ip }} remote-as {{ bgp.ebgp_neighbor_AS }} 
+          - network {{ loopback_interface.ip_address }} mask {{ loopback_interface.subnet_mask }} 
+        parents: router bgp {{ bgp.AS }}
+    
+    # Pause for 120 seconds to allow BGP to settle
+    - name: Pause for 120 seconds to allow BGP to come up and that routes have transferred accross
+      pause:
+        seconds: 120
+
+     # Show that BGP is up
+    - name: Show IP BGP Summary
+      become: True
+      cisco.ios.ios_command: 
+        commands: show ip bgp summary
+      register: bgp_output
+
+    # Extract out the number of routes received over BGP by eacvh peer
+    - name: Debug output from  BGP summary
+      debug: 
+        msg: "{{ bgp_output['stdout_lines'][0][12] | split() }}"
+      register: bgp_split
+
+    - name: Debug output from  BGP summary to get count
+      debug: 
+        msg: "{{ bgp_split['msg'][9] }}"
+      register: bgp_route_count
+    
+    - name: BGP Route count
+      debug: 
+        msg: "{{ bgp_route_count }}"
+    
+
+
+  # We want to see a certain amount routes
+  # Neighbor        V           AS MsgRcvd MsgSent   TblVer  InQ OutQ Up/Down  State/PfxRcd
+  # x.x.x.x       4        65000       5       5        3    0    0 00:01:32        1   <<<<<-----  Want to see 1 prefix
+
+    # Save the config if the number of routes received == 1 which means that BGP is up and passinng required routes
+    - name: Clean up tasks
+      when: bgp_route_count['msg'][0] | int == 1
+      block:
+
+        - name: Save config to disk
+          become: True
+          cisco.ios.ios_command:
+            commands:
+            - command: 'copy running-config startup-config'
+              prompt:  'Destination filename \[startup-config\]?'
+              answer:  'startup-config'
+
+...

@@ -1,0 +1,16 @@
+---
+ansible_host: 172.16.252.2
+ansible_timeout: 30
+loopback_interface:
+  name: loopback0
+  ip_address: 2.2.2.2
+  subnet_mask: 255.255.255.255
+
+bgp:
+  ebgp_interface_name: Ethernet2/0
+  ebgp_ip_address: 100.0.0.6
+  ebgp_subnet_mask: 255.255.255.252
+  AS : 65000
+  ebgp_neighbor_ip : 100.0.0.5
+  ebgp_neighbor_AS : 64000
+...
